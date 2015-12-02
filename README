@@ -18,7 +18,33 @@ DESCRIPTION
 	library, or the name of the required library and an
 	accepted version range of said library. If the same
 	library name is used more than once, the versions and
-	version ranges are unioned.
+	version ranges are unioned. Recognised formats are
+
+	NAME            Any version of the library NAME will do.
+
+	NAME=VERSION    Only version VERSION of the library NAME
+	                is acceptable. (Multiple version can be
+	                used by specifying more than once.)
+
+	NAME<=MAX       Any versions up to and including MAX
+	                of the library NAME will do.
+
+	NAME<MAX        Any versions up to but excluding MAX
+	                of the library NAME will do.
+
+	NAME>=MIN       At least version MIN of the library
+	                NAME is required.
+
+	NAME>MIN        A greater version than version MIN of
+	                the library NAME is required.
+
+	NAME>=MIN<=MAX  Combines NAME>=MIN and NAME<=MAX.
+
+	NAME>=MIN<MAX   Combines NAME>=MIN and NAME<MAX.
+
+	NAME>MIN<=MAX   Combines NAME>MIN and NAME<=MAX.
+
+	NAME>MIN<MAX    Combines NAME>MIN and NAME<MAX.
 
 	The are not predefined values for VARIABLE, but the
 	standardised ones are:
