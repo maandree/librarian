@@ -1,0 +1,93 @@
+NAME
+	librarian - Return flags for compiling against libraries
+
+SYNOPSIS
+	librarian [OPTION]... [--] [VARIABLE]... [LIBRARY]...
+
+DESCRIPTION
+	librarian is used to print flags required when compiling
+	or linking, and want to use library that requires
+	non-trival flags.
+
+	librarian shall output the flags, required by the
+	selected libraries, LIBRARY, that are listed under the
+	selected variables, VARIABLE.
+
+	LIBRARY can either be the name of the required library,
+	the name of the required library and a version of said
+	library, or the name of the required library and an
+	accepted version range of said library. If the same
+	library name is used more than once, the versions and
+	version ranges are unioned.
+
+	The are not predefined values for VARIABLE, but the
+	standardised ones are:
+
+	CFLAGS          Flags required by the compiler to compile
+	               	the if the library LIBRARY is used. The
+	                library is a C library.
+
+	CPPFLAGS        Flags required by the C preprocessor to
+	               	compile the if the library LIBRARY is used.
+
+	LDFLAGS         Flags required by the linker to link the
+	               	program when the library LIBRARY is used.
+
+	CXXFLAGS        Flags required by the compiler to compile
+	               	the if the library LIBRARY is used. The
+	                library is a C++ library.
+
+	deps            Libraries the library LIBRARY is dependent
+	                on. Flags from these libraries should not
+	                appear in the other variables unless the
+	                library LIBRARY requires them directly.
+
+	All variables should be in upper case unless they are
+	reserved. In the latter case, the are lower cased.
+
+	If VARIABLE is omitted, the process will exit with the
+	value 0 if all listed libraries, LIBRARY, are available,
+	and otherwise exit with the value 2.
+
+	librarian files should be stored in PREFIX/share/librarian/.
+	Its filename should be the name of the library, followed
+	by an = (equals-sign) and the version number.
+
+	Empty lines and lines starting with a # (she) in a
+	librarian files is ignored. Other lines should begin
+	with a variable name and be followed by the required
+	flags relevant to that variable. For the variable deps,
+	libraries that the library requires should be listed
+	in the same format the LIBRARY argument uses.
+
+OPTIONS
+	-d	Add output for dependencies too.
+		Should be used for LDFLAGS when linking
+		statically.
+
+	-l	Print the location of the files specified by
+		LIBRARY.
+
+	-o	Prefer older libraries, when multiple versions
+		are available.
+
+ENVIRONMENT
+	LIBRARIAN_PATH
+		Colon separated list of directories to search
+		for librarian files.
+
+EXIT VALUE
+	0	Program was successful.
+
+	1	An error occurred.
+
+	2	A library was not found.
+
+	3	Usage error.
+
+RATIONALE
+	pkg-config(1) sucks.
+
+SEE ALSO
+	pkg-config(1)
+
