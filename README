@@ -18,7 +18,7 @@ DESCRIPTION
 	library, or the name of the required library and an
 	accepted version range of said library. If the same
 	library name is used more than once, the versions and
-	version ranges are unioned. Recognised formats are
+	version ranges are unioned. Recognised formats are:
 
 	NAME            Any version of the library NAME will do.
 
@@ -102,7 +102,7 @@ ENVIRONMENT
 		Colon separated list of directories to search
 		for librarian files.
 
-EXIT VALUE
+EXIT STATUS
 	0	Program was successful.
 
 	1	An error occurred.
