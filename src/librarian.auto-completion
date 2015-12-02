@@ -1,0 +1,14 @@
+(librarian
+	(unargumented  (options -d)  (complete -d)
+	 (desc 'Add output for dependencies too')
+	)
+
+	(unargumented  (options -l)  (complete -l)
+	 (desc 'Print the location of files')
+	)
+
+	(unargumented  (options -o)  (complete -o)
+	 (desc 'Prefer older versions of libraries')
+	)
+)
+
