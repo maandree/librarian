@@ -1,0 +1,202 @@
+.TH LIBRARIAN 1 LIBRARIAN
+.SH NAME
+librarian \- Return flags for compiling against libraries
+.SH SYNOPSIS
+.B librarian
+.RI [ OPTION ]...\ [\-\-]
+.RI [ VARIABLE ]...\ [ LIBRARY ...]
+.SH DESCRIPTION
+.B librarian
+is used to print flags required when compiling or linking,
+and want to use library that requires non-trival flags.
+.PP
+.B librarian
+shall output the flags, required by the selected libraries,
+.IR LIBRARY ,
+that are listed under the selected variables,
+.IR VARIABLE .
+.PP
+.I LIBRARY
+can either be the name of the required library, the name of
+the required library and a version of said library, or the
+name of the required library and an accepted version range
+of said library. If the same library name is used more than
+once, the versions and version ranges are unioned. Recognised
+formats are:
+.TP
+.I NAME
+Any version of the library
+.I NAME
+will do.
+.TP
+.IB NAME = VERSION
+Only version
+.I VERSION
+of the library
+.I NAME
+is acceptable. (Multiple version can be used by specifying
+more than once.)
+.TP
+.IB NAME <= MAX
+Any versions up to and including
+.I MAX
+of the library
+.I NAME
+will do.
+.TP
+.IB NAME < MAX
+Any versions up to but excluding
+.I MAX
+of the library
+.I NAME
+will do.
+.TP
+.IB NAME >= MIN
+At least version
+.I MIN
+of the library
+.I NAME
+is required.
+.TP
+.IB NAME > MIN
+A greater version than version
+.I MIN
+of the library
+.I NAME
+is required.
+.TP
+.IB NAME >= MIN <= MAX
+Combines
+.IB NAME >= MIN
+and
+.IR NAME \fB<=\fP MAX .
+.TP
+.IB NAME >= MIN < MAX
+Combines
+.IB NAME >= MIN
+and
+.IR NAME \fB<\fP MAX .
+.TP
+.IB NAME > MIN <= MAX
+Combines
+.IB NAME > MIN
+and
+.IR NAME \fB<=\fP MAX .
+.TP
+.IB NAME > MIN < MAX
+Combines
+.IB NAME > MIN
+and
+.IR NAME \fB<\fP MAX .
+.PP
+The are not predefined values for
+.IR VARIABLE ,
+but the standardised ones are:
+.TP
+.B CFLAGS
+Flags required by the compiler to compile the if the library
+.I LIBRARY
+is used. The library is a C library.
+.TP
+.B CPPFLAGS
+Flags required by the C preprocessor to compile the if the
+library
+.I LIBRARY
+is used.
+.TP
+.B LDFLAGS
+Flags required by the linker to link the program when the
+library
+.I LIBRARY
+is used.
+.TP
+.B CXXFLAGS
+Flags required by the compiler to compile
+the if the library
+.I LIBRARY
+is used. The library is a C++ library.
+.TP
+.B deps
+Libraries the library
+.I LIBRARY
+is dependent on. Flags from these libraries should not
+appear in the other variables unless the library
+.I LIBRARY
+requires them directly.
+.PP
+All variables should be in upper case unless they are
+reserved. In the latter case, the are lower cased.
+.PP
+If
+.I VARIABLE
+is omitted, the process will exit with the value
+.B 0
+if all listed
+libraries,
+.IR LIBRARY ,
+are available, and otherwise exit with the value
+.BR 2 .
+.PP
+.B
+librarian
+files should be stored in
+.BR PREFIX/share/librarian/ .
+Its filename should be the name of the library, followed
+by an
+.B =
+(equals-sign) and the version number.
+.PP
+Empty lines and lines starting with a
+.B #
+(she) in a
+.B librarian
+files is ignored. Other lines should begin with a variable
+name and be followed by the required flags relevant to that
+variable. For the variable
+.BR deps ,
+libraries that the library requires should be listed in the
+same format the
+.I LIBRARY
+argument uses.
+.SH OPTIONS
+.TP
+.B \-d
+Add output for dependencies too. Should be used for
+.B LDFLAGS
+when linking statically.
+.TP
+.B \-l
+Print the location of the files specified by
+.IR LIBRARY .
+.TP
+.B \-o
+Prefer older libraries, when multiple versions are available.
+.SH ENVIRONMENT
+.B LIBRARIAN_PATH
+Colon separated list of directories to search for librarian files.
+.SH "EXIT STATUS"
+.TP
+.B 0
+Program was successful.
+.TP
+.B 1
+An error occurred.
+.TP
+.B 2
+A library was not found.
+.TP
+.B 3
+Usage error.
+.SH RATIONALE
+.BR pkg-config (1)
+sucks.
+.SH "SEE ALSO"
+.BR pkg-config (1)
+.SH AUTHORS
+Principal author, Mattias Andrée.  See the LICENSE file for the full
+list of authors.
+.SH LICENSE
+MIT/X Consortium License.
+.SH BUGS
+Please report bugs to https://github.com/maandree/librarian/issues or to
+maandree@member.fsf.org
