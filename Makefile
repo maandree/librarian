@@ -17,6 +17,9 @@ LICENSEDIR = $(DATADIR)/licenses
 PKGNAME = librarian
 COMMAND = librarian
 
+# Default value for the environment variable LIBRARIAN_PATH.
+LIBRARIAN_PATH = /usr/local/share/librarian:/usr/share/librarian
+
 
 OPTIMISE = -Og -g
 WARN = -Wall -Wextra -Wdouble-promotion -Wformat=2 -Winit-self -Wmissing-include-dirs \
@@ -30,7 +33,7 @@ WARN = -Wall -Wextra -Wdouble-promotion -Wformat=2 -Winit-self -Wmissing-include
        -Wsuggest-attribute=pure -Wsuggest-attribute=format -Wnormalized=nfkc -pedantic
 #OPTIMISE = -O2
 #WARN = -Wall -Wextra -pedantic
-FLAGS = -std=c99 $(WARN) $(OPTIMISE)
+FLAGS = -std=c99 $(WARN) $(OPTIMISE) -D'DEFAULT_PATH="$(LIBRARIAN_PATH)"'
 
 
 

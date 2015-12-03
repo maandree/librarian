@@ -32,6 +32,15 @@
 
 
 /**
+ * Default value for the environment variable LIBRARIAN_PATH.
+ */
+#ifndef DEFAULT_PATH
+# define DEFAULT_PATH  "/usr/local/share/librarian:/usr/share/librarian"
+#endif
+
+
+
+/**
  * The name of the process.
  */
 static const char *argv0;
@@ -272,6 +281,7 @@ int main(int argc, char *argv[])
 	char **variables_last = argv;
 	struct library *libraries = NULL;
 	struct library *libraries_last;
+	const char *path;
 
 	/* Parse arguments. */
 	argv0 = argv ? (argc--, *argv++) : "pp";
@@ -311,6 +321,11 @@ int main(int argc, char *argv[])
 		else if (parse_library(*args, libraries_last++))
 			goto usage;
 	}
+
+	/* Get LIBRARIAN_PATH. */
+	path = getenv("LIBRARIAN_PATH");
+	if (!path || !*path)
+		path = DEFAULT_PATH
 
 	CLEANUP;
 	return 0;
