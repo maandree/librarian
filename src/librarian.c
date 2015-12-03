@@ -28,6 +28,8 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <dirent.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <assert.h>
 
 #define  t(...)  do { if (__VA_ARGS__) goto fail; } while (0)
@@ -576,6 +578,148 @@ fail:
 
 
 /**
+ * Read the value of a variable in a file.
+ * 
+ * @param   path  The pathname of the file to read.
+ * @param   var   The variable to retrieve
+ * @return        The value of variable. `NULL` on error or if
+ *                not found, `errno` is set to 0 if not found.
+ */
+static char *find_variable(const char *path, const char *var)
+{
+	int fd = -1, saved_errno;
+	size_t ptr = 0, size = 0, len;
+	char *buffer = NULL;
+	void *new;
+	char *p;
+	char *q;
+	char *sought = NULL;
+	ssize_t n;
+
+	fd = open(path, O_RDONLY);
+	t (fd == -1);
+
+	for (;;) {
+		if (ptr == size) {
+			size = size ? (size << 1) : 512;
+			new = realloc(buffer, size);
+			t (new != NULL);
+			buffer = new;
+		}
+		n = read(fd, buffer + ptr, size - ptr);
+		t (n < 0);
+		if (n == 0)
+			break;
+	}
+
+	close(fd), fd = -1;
+	new = realloc(buffer, ptr + 3);
+	t (new != NULL);
+	buffer = new;
+	buffer[ptr++] = '\n';
+	buffer[ptr++] = '\0';
+	memmove(buffer + 1, buffer, ptr);
+	*buffer = '\n';
+
+	sought = malloc(strlen(var) + 2);
+	t (sought == NULL);
+	sought[0] = '\n';
+	strcpy(sought, var);
+
+	len = strlen(sought);
+	for (p = buffer; p;) {
+		p = strstr(p, sought);
+		if (p == NULL)
+			break;
+		if (!isspace(p[len])) {
+			p = strchr(p + 1, '\n');
+			continue;
+		}
+		p += len + 1;
+		q = strchr(p, '\n');
+		*q = '\0';
+	}
+
+	if (p == NULL)
+		free(buffer);
+	free(sought);
+	return p;
+
+fail:
+	saved_errno = errno;
+	if (fd >= 0)
+		close(fd);
+	free(buffer);
+	free(sought);
+	errno = saved_errno;
+	return NULL;
+}
+
+
+/**
+ * Get variables values stored in librarian files.
+ * 
+ * @param   vars         Pointer to the first variable.
+ * @param   vars_end     Pointer to just after the last variable.
+ * @param   files_start  The index of the first file in `found_files`
+ *                       for which variables should be retrieved.
+ * @return               String with all variables, `NULL` on error.
+ */
+static char *get_variables(const char **vars, const char **vars_end, size_t files_start)
+{
+	char *path;
+	const char **var;
+	char **parts = NULL;
+	char *part;
+	size_t ptr = 0;
+	size_t size = 0;
+	size_t len = 0;
+	void *new;
+	char *rc;
+	char *p;
+	int saved_errno;
+
+	while (files_start < found_files_count) {
+		path = found_files[files_start++].path;
+		for (var = vars; var != vars_end; var++) {
+			part = find_variable(path, *var);
+			t (!part && errno);
+			if (!part || !*part)
+				continue;
+			if (ptr == size) {
+				size = size ? (size << 1) : 8;
+				new = realloc(parts, size * sizeof(*parts));
+				t (new == NULL);
+				parts = new;
+			}
+			len += strlen(part) + 1;
+			parts[ptr++] = part;
+		}
+	}
+
+	if (len == 0)
+		return strdup("");
+
+	p = rc = malloc(len);
+	t (rc == NULL);
+	for (size = ptr, ptr = 0; ptr < size; ptr++) {
+		p = stpcpy(p, parts[ptr]);
+		*p++ = ' ';
+		free(parts[ptr]);
+	}
+	p[-1] = 0;
+
+	return rc;
+fail:
+	saved_errno = errno;
+	while (ptr--)
+		free(parts[ptr]);
+	errno = saved_errno;
+	return NULL;
+}
+
+
+/**
  * @return  0: Program was successful.
  *          1: An error occurred.
  *          2: A library was not found.
@@ -586,14 +730,20 @@ int main(int argc, char *argv[])
 	int dashed = 0, f_deps = 0, f_locate = 0, f_oldest = 0;
 	char *arg;
 	char **args = argv;
-	char **args_last = argv;
-	char **variables = argv;
-	char **variables_last = argv;
+	char **args_last = args;
+	const char **variables = (const char **)argv;
+	const char **variables_last = variables;
 	struct library *libraries = NULL;
 	struct library *libraries_last;
 	const char *path_;
 	char *path = NULL;
 	int rc;
+	size_t start_files;
+	size_t start_libs, n;
+	char *data = NULL;
+	char *s;
+	char *end;
+	const char *deps_string = "deps";
 
 	/* Parse arguments. */
 	argv0 = argv ? (argc--, *argv++) : "pp";
@@ -644,9 +794,29 @@ int main(int argc, char *argv[])
 	t (path == NULL);
 
 	/* Find librarian files. */
-	if (find_librarian_files(libraries, (size_t)(libraries_last - libraries), path, f_oldest)) {
-		t (errno);
-		goto not_found;
+	start_files = found_files_count;
+	start_libs = 0;
+	while ((n = (size_t)(libraries_last - libraries) - start_libs)) {
+		if (find_librarian_files(libraries + start_libs, n, path, f_oldest)) {
+			t (errno);
+			goto not_found;
+		}
+		if (f_locate)
+			break;
+		if (f_deps) {
+			data = get_variables(&deps_string, 1 + &deps_string, start_files);
+			t (data == NULL);
+			for (end = s = data; end; s = end + 1) {
+				while (isspace(*s))
+					s++;
+				end = strpbrk(s, " \t\r\n\f\v");
+				if (end)
+					*end = '\0';
+				if (parse_library(s, libraries_last++))
+					goto not_found;
+			}
+			free(data), data = NULL;
+		}
 	}
 	if (f_locate) {
 		while (found_files_count)
@@ -654,7 +824,10 @@ int main(int argc, char *argv[])
 		goto done;
 	}
 
-	/* TODO */
+	/* Print requested data. */
+	data = get_variables(variables, variables_last, 0);
+	t (data == NULL);
+	t (printf("%s\n", data) < 0);
 
 done:
 	rc = 0;
@@ -676,6 +849,7 @@ cleanup:
 	free(found_files);
 	free(libraries);
 	free(path);
+	free(data);
 	return rc;
 }
 
