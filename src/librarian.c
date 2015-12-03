@@ -87,6 +87,23 @@ static const char *argv0;
 
 
 /**
+ * Compares the name of two libraries.
+ * 
+ * @param   a:const struct library *  One of the libraries.
+ * @param   b:const struct library *  The other library.
+ * @return                            <0: `a` < `b`.
+ *                                    =0: `a` = `b`.
+ *                                    >0: `a` > `b`.
+ */
+static int library_name_cmp(const void *a, const void *b)
+{
+	const struct library *la = a;
+	const struct library *lb = b;
+	return strcmp(la->name, lb->name);
+}
+
+
+/**
  * Determine whether a string is the
  * name of a non-reserved variable.
  * 
@@ -300,7 +317,7 @@ static char *locate_in_dir(struct library *lib, char *path, int oldest)
 	DIR *d = NULL;
 	struct dirent *f;
 	char *p;
-	char *old;
+	char *old = NULL;
 	char *best = NULL;
 	char *best_ver;
 	int r, saved_errno;
@@ -415,6 +432,88 @@ fail:
 
 
 /**
+ * Find librarian files for all libraries.
+ * 
+ * @param   libraries  The sought libraries.
+ * @param   n          The number of elements in `libraries`.
+ * @param   path       LIBRARIAN_PATH.
+ * @param   oldest     Are older versions prefered?
+ * @return             `NULL`-terminated list of librarian files.
+ *                     `NULL` if all where not found, or on error,
+ *                     on failure to find librarian files, `errno`
+ *                     is set to 0.
+ */
+static char **find_librarian_files(struct library *libraries, size_t n, char *path, int oldest)
+{
+	size_t i;
+	char *best = NULL;
+	char *found;
+	char *best_ver;
+	char *found_ver;
+	const char *last = NULL;
+	char **rc = NULL;
+	size_t ptr = 0;
+	int r, saved_errno;
+
+	qsort(libraries, n, sizeof(*libraries), library_name_cmp);
+	rc = malloc((n + 1) * sizeof(*rc));
+	t (rc == NULL);
+
+	for (i = 0; i < n; i++) {
+		/* TODO skip dependees */
+		found = locate(libraries + i, path, oldest);
+		t (!found && errno);
+		if (found == NULL) {
+			if (i + 1 == n)
+				goto not_found;
+			if (strcmp(libraries[i].name, libraries[i + 1].name))
+				goto not_found;
+			continue;
+		}
+		if (last && !strcmp(libraries[i].name, last)) {
+			best_ver = strrchr(best, '=');
+			found_ver = strrchr(found, '=');
+                        assert(best_ver && !strchr(best_ver, '/'));
+                        assert(found_ver && !strchr(found_ver, '/'));
+                        r = version_cmp(found + 1, best_ver + 1);
+                        if (oldest ? (r < 0) : (r > 0)) {
+				free(best);
+				rc[ptr - 1] = best = found;
+			}
+		} else {
+			rc[ptr++] = best = found;
+		}
+		last = libraries[i].name;
+	}
+
+	rc[ptr++] = NULL;
+	return rc;
+
+not_found:
+	if (libraries[0].upper == libraries[0].lower) {
+		fprintf(stderr, "%s: cannot find library: %s%s%s", argv0,
+			libraries[0].name, libraries[0].upper ? "=" : "",
+			libraries[0].upper);
+	} else {
+		fprintf(stderr, "%s: cannot find library: %s%s%s%s%s%s%s", argv0,
+			libraries[0].name,
+			libraries[0].lower ? ">" : "", libraries[0].lower_closed ? "=" : "",
+			libraries[0].lower ? libraries[0].lower : "",
+			libraries[0].upper ? "<" : "", libraries[0].upper_closed ? "=" : "",
+			libraries[0].upper ? libraries[0].upper : "");
+	}
+	errno = 0;
+fail:
+	saved_errno = errno;
+	while (ptr--)
+		free(rc[ptr--]);
+	free(rc);
+	errno = saved_errno;
+	return NULL;
+}
+
+
+/**
  * @return  0: Program was successful.
  *          1: An error occurred.
  *          2: A library was not found.
@@ -422,10 +521,6 @@ fail:
  */
 int main(int argc, char *argv[])
 {
-#define CLEANUP           \
-	free(libraries),  \
-	free(path)
-
 	int dashed = 0, f_deps = 0, f_locate = 0, f_oldest = 0;
 	char *arg;
 	char **args = argv;
@@ -436,6 +531,9 @@ int main(int argc, char *argv[])
 	struct library *libraries_last;
 	const char *path_;
 	char *path = NULL;
+	char **files = NULL;
+	char **file;
+	int rc;
 
 	/* Parse arguments. */
 	argv0 = argv ? (argc--, *argv++) : "pp";
@@ -485,19 +583,41 @@ int main(int argc, char *argv[])
 	path = strdup(path_);
 	t (path == NULL);
 
-	CLEANUP;
-	return 0;
+	/* Find librarian files. */
+	files = find_librarian_files(libraries, (size_t)(libraries_last - libraries), path, f_oldest);
+	if (files == NULL) {
+		t (errno);
+		goto not_found;
+	}
+	if (f_locate) {
+		for (file = files; *file; file++)
+			t (printf("%s\n", *file) < 0);
+		goto done;
+	}
 
+	/* TODO */
+
+done:
+	rc = 0;
+	goto cleanup;
 fail:
 	perror(argv0);
-	CLEANUP;
-	return 1;
-
+	rc = 1;
+	goto cleanup;
+not_found:
+	rc = 2;
+	goto cleanup;
 usage:
 	fprintf(stderr, "%s: Invalid arguments, see `man 1 librarian'.\n", argv0);
-	CLEANUP;
-	return 3;
-
-#undef CLEANUP
+	rc = 3;
+	goto cleanup;
+cleanup:
+	if ((file = files))
+		for (; *file; file++)
+			free(*file);
+	free(files);
+	free(libraries);
+	free(path);
+	return rc;
 }
 
