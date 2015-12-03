@@ -755,7 +755,11 @@ int main(int argc, char *argv[])
 	char *data = NULL;
 	char *s;
 	char *end;
+	void** free_this = NULL;
+	size_t free_this_ptr = 0;
+	size_t free_this_size = 0;
 	const char *deps_string = "deps";
+	void *new;
 
 	/* Parse arguments. */
 	argv0 = argv ? (argc--, *argv++) : "pp";
@@ -830,7 +834,13 @@ int main(int argc, char *argv[])
 				if (*s && parse_library(s, libraries_last++))
 					goto not_found;
 			}
-			free(data), data = NULL;
+			if (free_this_ptr == free_this_size) {
+				free_this_size = free_this_size ? (free_this_size << 1) : 4;
+				new = realloc(free_this, free_this_size * sizeof(void*));
+				t (new == NULL);
+				free_this = new;
+			}
+			free_this[free_this_ptr++] = data;
 		}
 	}
 	if (f_locate) {
@@ -862,6 +872,9 @@ cleanup:
 	while (found_files_count--)
 		free(found_files[found_files_count].path);
 	free(found_files);
+	while (free_this_ptr--)
+		free(free_this[free_this_ptr]);
+	free(free_this);
 	free(libraries);
 	free(path);
 	free(data);
