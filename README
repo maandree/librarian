@@ -80,7 +80,7 @@ DESCRIPTION
 	by an = (equals-sign) and the version number.
 
 	Empty lines and lines starting with a # (she) in a
-	librarian files is ignored. Other lines should begin
+	librarian files are ignored. Other lines should begin
 	with a variable name and be followed by the required
 	flags relevant to that variable. For the variable deps,
 	libraries that the library requires should be listed
@@ -99,7 +99,7 @@ OPTIONS
 
 ENVIRONMENT
 	LIBRARIAN_PATH
-		Colon separated list of directories to search
+		Colon-separated list of directories to search
 		for librarian files.
 
 EXIT STATUS
@@ -110,6 +110,15 @@ EXIT STATUS
 	2	A library was not found.
 
 	3	Usage error.
+
+FEATURES
+	*	Sane option set.
+	*	Does not use glib.
+	*	Does not implement features your package manager
+		implement.
+	*	Language agnostic.
+	*	Does not resolve variables declared in the file.
+	*	Does not parse lines beyond identifying what it is.
 
 RATIONALE
 	pkg-config(1) sucks.
