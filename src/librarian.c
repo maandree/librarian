@@ -736,11 +736,8 @@ int main(int argc, char *argv[])
 	t (path == NULL);
 
 	/* Find librarian files. */
-	for (start_libs = 0;;) {
+	for (start_libs = 0; (n = libraries_ptr - start_libs);) {
 		start_files = found_files_count;
-		n = libraries_ptr - start_libs;
-		if (n == 0)
-			break;
 		if (find_librarian_files(libraries + start_libs, n, path, f_oldest)) {
 			t (errno);
 			goto not_found;
