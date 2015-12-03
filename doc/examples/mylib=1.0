@@ -1,0 +1,3 @@
+CFLAGS
+CPPFLAGS -I/usr/share/include/my
+LDFLAGS -lmy
