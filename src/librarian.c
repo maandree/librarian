@@ -30,10 +30,12 @@
 #define  t(...)  do { if (__VA_ARGS__) goto fail; } while (0)
 
 
+
 /**
  * The name of the process.
  */
 static const char *argv0;
+
 
 
 /**
