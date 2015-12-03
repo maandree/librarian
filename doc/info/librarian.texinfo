@@ -144,6 +144,12 @@ in the other variables unless the library
 @code{LIBRARY} requires them directly.
 @end table
 
+Upper cased arguments are interpreted as
+@code{VARIABLE} options, other arguments are
+interpreted as @code{LIBRARY} options, and
+should be, but are not required to be, lower
+cased.
+
 If @code{VARIABLE} is omitted, the process will
 exit with the value @code{0} if all listed libraries,
 @code{LIBRARY}, are available, and otherwise exit
