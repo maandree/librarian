@@ -325,7 +325,7 @@ int main(int argc, char *argv[])
 	/* Get LIBRARIAN_PATH. */
 	path = getenv("LIBRARIAN_PATH");
 	if (!path || !*path)
-		path = DEFAULT_PATH
+		path = DEFAULT_PATH;
 
 	CLEANUP;
 	return 0;
