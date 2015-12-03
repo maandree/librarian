@@ -21,10 +21,13 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+#define _POSIX_C_SOURCE  200809L
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <dirent.h>
 #include <assert.h>
 
 #define  t(...)  do { if (__VA_ARGS__) goto fail; } while (0)
@@ -263,6 +266,155 @@ static int version_cmp(char *a, char *b)
 
 
 /**
+ * Test whether a version of a library is compatible.
+ * 
+ * @param   version   The found version.
+ * @param   required  Compatible version range.
+ * @return            1: Version is accepted.
+ *                    0: Version is incompatible.
+ */
+static int test_library_version(char *version, struct library *required)
+{
+	int upper = required->upper ? version_cmp(version, required->upper) : -1;
+	int lower = required->lower ? version_cmp(version, required->lower) : +1;
+
+	upper = required->lower_closed ? (upper <= 0) : (upper < 0);
+	lower = required->lower_closed ? (lower >= 0) : (lower > 0);
+
+	return upper && lower;
+}
+
+
+/**
+ * Locate a librarian file in a directory.
+ * 
+ * @param   lib     Library specification.
+ * @param   path    The pathname of the directory.
+ * @param   oldest  Are older versions prefered?
+ * @return          The pathname of the library's librarian file.
+ *                  `NULL` on error or if not found, if not found,
+ *                  `errno` is set to 0.
+ */
+static char *locate_in_dir(struct library *lib, char *path, int oldest)
+{
+	DIR *d = NULL;
+	struct dirent *f;
+	char *p;
+	char *old;
+	char *best = NULL;
+	char *best_ver;
+	int r, saved_errno;
+
+	d = opendir(path);
+	t (d == NULL);
+
+	while ((f = (errno = 0, readdir(d)))) {
+		p = strrchr(f->d_name, '=');
+		if (p == NULL)
+			continue;
+		*p = '\0';
+		if (strcmp(f->d_name, lib->name))
+			continue;
+		*p++ = '=';
+		if (!test_library_version(p, lib))
+			continue;
+		if (best == NULL) {
+			old = best, best = strdup(f->d_name);
+		} else {
+			best_ver = strrchr(best, '=');
+			assert(best_ver && !strchr(best_ver, '/'));
+			r = version_cmp(p, best_ver + 1);
+			if (oldest ? (r < 0) : (r > 0))
+				old = best, best = strdup(f->d_name);
+		}
+		if (best == NULL) {
+			best = old;
+			goto fail;
+		}
+		free(old);
+	}
+	t (errno);
+
+	closedir(d), d = NULL;
+
+	if (best == NULL)
+		return errno = 0, NULL;
+
+	p = malloc(strlen(path) + strlen(best) + 2);
+	t (p == NULL);
+	stpcpy(stpcpy(stpcpy(p, path), "/"), best);
+
+	return p;
+
+fail:
+	saved_errno = errno;
+	free(best);
+	if (d != NULL)
+		closedir(d);
+	errno = saved_errno;
+	return NULL;
+}
+
+
+/**
+ * Locate a librarian file on the system.
+ * 
+ * @param   lib     Library specification.
+ * @param   path    LIBRARIAN_PATH.
+ * @param   oldest  Are older versions prefered?
+ * @return          The pathname of the library's librarian file.
+ *                  `NULL` on error or if not found, if not found,
+ *                  `errno` is set to 0.
+ */
+static char *locate(struct library *lib, char *path, int oldest)
+{
+	char *p;
+	char *end = path;
+	char *e;
+	char *best = NULL;
+	char *found;
+	char *old;
+	char *best_ver;
+	char *found_ver;
+	int r, saved_errno;
+
+	for (p = path; end; *e = (end ? ':' : '\0'), p = end + 1) {
+		end = strchr(p, ':');
+		e = end ? end : strchr(p, '\0');
+		*e = '\0';
+		if (!*p)
+			continue;
+		found = locate_in_dir(lib, p, oldest);
+		if (found == NULL) {
+			t (errno);
+			continue;
+		}
+		old = found;
+		if (best == NULL) {
+			old = best, best = found;
+		} else {
+			best_ver = strrchr(best, '=');
+			found_ver = strrchr(found, '=');
+			assert(best_ver && !strchr(best_ver, '/'));
+			assert(found_ver && !strchr(found_ver, '/'));
+			r = version_cmp(found_ver + 1, best_ver + 1);
+			if (oldest ? (r < 0) : (r > 0))
+				old = best, best = found;
+		}
+		free(old);
+	}
+
+	return errno = 0, best;
+
+fail:
+	saved_errno = errno;
+	free(best);
+	errno = saved_errno;
+	return NULL;
+}
+
+
+/**
  * @return  0: Program was successful.
  *          1: An error occurred.
  *          2: A library was not found.
@@ -270,8 +422,9 @@ static int version_cmp(char *a, char *b)
  */
 int main(int argc, char *argv[])
 {
-#define CLEANUP  \
-	free(libraries)
+#define CLEANUP           \
+	free(libraries),  \
+	free(path)
 
 	int dashed = 0, f_deps = 0, f_locate = 0, f_oldest = 0;
 	char *arg;
@@ -281,7 +434,8 @@ int main(int argc, char *argv[])
 	char **variables_last = argv;
 	struct library *libraries = NULL;
 	struct library *libraries_last;
-	const char *path;
+	const char *path_;
+	char *path = NULL;
 
 	/* Parse arguments. */
 	argv0 = argv ? (argc--, *argv++) : "pp";
@@ -310,6 +464,8 @@ int main(int argc, char *argv[])
 			argc--;
 		}
 	}
+	if (f_deps && f_locate)
+		goto usage;
 
 	/* Parse VARIABLE and LIBRARY arguments. */
 	libraries = malloc((size_t)(args_last - args) * sizeof(*libraries));
@@ -323,9 +479,11 @@ int main(int argc, char *argv[])
 	}
 
 	/* Get LIBRARIAN_PATH. */
-	path = getenv("LIBRARIAN_PATH");
-	if (!path || !*path)
-		path = DEFAULT_PATH;
+	path_ = getenv("LIBRARIAN_PATH");
+	if (!path_ || !*path_)
+		path_ = DEFAULT_PATH;
+	path = strdup(path_);
+	t (path == NULL);
 
 	CLEANUP;
 	return 0;
