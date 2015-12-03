@@ -123,6 +123,17 @@ FEATURES
 RATIONALE
 	pkg-config(1) sucks.
 
+FUTURE DIRECTION
+	Will be implemented if needed in the real world:
+
+	*	When is used -d, librarian will try all
+		versions of the libraries until it founds
+		a combination all selected libraries and
+		their dependencies are compatible with,
+		rather than simply failing.
+
+	*	Library conflicts.
+
 SEE ALSO
 	pkg-config(1)
 

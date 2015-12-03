@@ -190,6 +190,19 @@ Usage error.
 .SH RATIONALE
 .BR pkg-config (1)
 sucks.
+.SH "FUTURE DIRECTION"
+Will be implemented if needed in the real world:
+.TP
+*
+When is used
+.BR \-d ,
+.B librarian
+will try all versions of the libraries until it founds
+a combination all selected libraries and their dependencies
+are compatible with, rather than simply failing.
+.TP
+*
+Library conflicts.
 .SH "SEE ALSO"
 .BR pkg-config (1)
 .SH AUTHORS
