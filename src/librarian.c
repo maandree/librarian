@@ -78,11 +78,42 @@ struct library {
 };
 
 
+/**
+ * Structure for already located librarian files.
+ */
+struct found_file {
+	/**
+	 * The name of the library.
+	 */
+	const char *name;
+
+	/**
+	 * The found version of the library.
+	 */
+	char *version;
+
+	/**
+	 * The path name of the librarian file.
+	 */
+	char *path;
+};
+
+
 
 /**
  * The name of the process.
  */
 static const char *argv0;
+
+/**
+ * Sorted list of already located librarian files.
+ */
+static struct found_file *found_files = NULL;
+
+/**
+ * The number of elements in `found_files`.
+ */
+static size_t found_files_count = 0;
 
 
 
@@ -100,6 +131,23 @@ static int library_name_cmp(const void *a, const void *b)
 	const struct library *la = a;
 	const struct library *lb = b;
 	return strcmp(la->name, lb->name);
+}
+
+
+/**
+ * Compares the name of two `struct found_file`.
+ * 
+ * @param   a:const struct found_file *  One of the files.
+ * @param   b:const struct found_file *  The other file.
+ * @return                               <0: `a` < `b`.
+ *                                       =0: `a` = `b`.
+ *                                       >0: `a` > `b`.
+ */
+static int found_file_name_cmp(const void *a, const void *b)
+{
+	const struct found_file *fa = a;
+	const struct found_file *fb = b;
+	return strcmp(fa->name, fb->name);
 }
 
 
@@ -452,40 +500,64 @@ static char **find_librarian_files(struct library *libraries, size_t n, char *pa
 	char *found_ver;
 	const char *last = NULL;
 	char **rc = NULL;
+	void *new;
 	size_t ptr = 0;
 	int r, saved_errno;
+	struct found_file f;
+	struct found_file *have;
 
 	qsort(libraries, n, sizeof(*libraries), library_name_cmp);
+	qsort(found_files, found_files_count, sizeof(*found_files), found_file_name_cmp);
 	rc = malloc((n + 1) * sizeof(*rc));
 	t (rc == NULL);
+	new = realloc(found_files, (found_files_count + n) * sizeof(*found_files));
+	t (new == NULL);
+	found_files = new;
 
 	for (i = 0; i < n; i++) {
-		/* TODO skip dependees */
+		f.name = libraries[i].name;
+		have = bsearch(&f, found_files, found_files_count, sizeof(*found_files), found_file_name_cmp);
+		if (have) {
+			if (test_library_version(have->version, libraries + i))
+				continue;
+			goto not_this_range;
+		}
 		found = locate(libraries + i, path, oldest);
 		t (!found && errno);
-		if (found == NULL) {
-			if (i + 1 == n)
-				goto not_found;
-			if (strcmp(libraries[i].name, libraries[i + 1].name))
-				goto not_found;
-			continue;
-		}
-		if (last && !strcmp(libraries[i].name, last)) {
+		if (found == NULL)
+			goto not_this_range;
+		if (last && !strcmp(f.name, last)) {
 			best_ver = strrchr(best, '=');
 			found_ver = strrchr(found, '=');
                         assert(best_ver && !strchr(best_ver, '/'));
                         assert(found_ver && !strchr(found_ver, '/'));
                         r = version_cmp(found + 1, best_ver + 1);
-                        if (oldest ? (r < 0) : (r > 0)) {
+			r = oldest ? (r < 0) : (r > 0);
+                        if (r)
 				free(best);
-				rc[ptr - 1] = best = found;
-			}
 		} else {
-			rc[ptr++] = best = found;
+			r = 1, ptr++;
 		}
-		last = libraries[i].name;
+		if (r) {
+			rc[ptr - 1] = best = found;
+			found_ver = strrchr(found, '=');
+                        assert(found_ver && !strchr(found_ver, '/'));
+			found_files[found_files_count + ptr - 1].name = f.name;
+			found_files[found_files_count + ptr - 1].version = found_ver + 1;
+			found_files[found_files_count + ptr - 1].path = found;
+		}
+		last = f.name;
+		continue;
+
+	not_this_range:
+		if (i + 1 == n)
+			goto not_found;
+		if (strcmp(f.name, libraries[i + 1].name))
+			goto not_found;
+		continue;
 	}
 
+	found_files_count += ptr;
 	rc[ptr++] = NULL;
 	return rc;
 
@@ -616,6 +688,7 @@ cleanup:
 		for (; *file; file++)
 			free(*file);
 	free(files);
+	free(found_files);
 	free(libraries);
 	free(path);
 	return rc;
