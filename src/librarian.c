@@ -22,6 +22,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 #define _POSIX_C_SOURCE  200809L
+#include "util.h"
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
@@ -30,10 +31,6 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <assert.h>
-
-#define  t(...)  do { if (__VA_ARGS__) goto fail; } while (0)
-
 
 
 /**
@@ -163,13 +160,9 @@ static int found_file_name_cmp(const void *a, const void *b)
  */
 static int is_variable(const char *s)
 {
-	for (; *s; s++) {
-		if      (isupper(*s))       ;
-		else if (isdigit(*s))       ;
-		else if (strchr("_-", *s))  ;
-		else
+	for (; *s; s++)
+		if (!isupper(*s) && !isdigit(*s) && !strchr("_-", *s))
 			return 0;
-	}
 	return 1;
 }
 
@@ -219,8 +212,7 @@ static int parse_library(char *s, struct library *lib)
 		lib->upper = p;
 		break;
 	default:
-		assert(0);
-		abort();
+		NEVER_REACHED;
 		break;
 	}
 
@@ -243,7 +235,6 @@ static int version_subcmp(char *a, char *b)
 {
 	char *ap;
 	char *bp;
-	char ac, bc;
 	int r;
 
 	while (*a || *b) {
@@ -253,12 +244,9 @@ static int version_subcmp(char *a, char *b)
 		bp = b + strspn(b, "0123456789");
 		while (*a == '0')  a++;
 		while (*b == '0')  b++;
-		ac = *ap, bc = *bp;
-		*ap = '\0', *bp = '\0';
-		if (ap - a < bp - b)  return *ap = ac, *bp = bc, -1;
-		if (ap - a > bp - b)  return *ap = ac, *bp = bc, +1;
-		r = strcmp(a, b);
-		*ap = ac, *bp = bc;
+		if (ap - a < bp - b)  return -1;
+		if (ap - a > bp - b)  return +1;
+		TEMP_NUL(ap, TEMP_NUL(bp, r = strcmp(a, b)));
 		a = isdigit(*a) ? (ap + 1) : a;
 		b = isdigit(*b) ? (bp + 1) : b;
 		if (r)  return r;
@@ -266,10 +254,7 @@ static int version_subcmp(char *a, char *b)
 		/* Compare letter (non-digit) part. */
 		ap = a + strcspn(a, "0123456789");
 		bp = b + strcspn(b, "0123456789");
-		ac = *ap, bc = *bp;
-		*ap = '\0', *bp = '\0';
-		r = strcmp(a, b);
-		*ap = ac, *bp = bc;
+		TEMP_NUL(ap, TEMP_NUL(bp, r = strcmp(a, b)));
 		a = *a && !isdigit(*a) ? (ap + 1) : a;
 		b = *b && !isdigit(*b) ? (bp + 1) : b;
 		if (r)  return r;
@@ -290,49 +275,35 @@ static int version_subcmp(char *a, char *b)
  */
 static int version_cmp(char *a, char *b)
 {
-#define COMPARE                              \
-	if (ap && bp) {                      \
-		ac = *ap, bc = *bp;          \
-		*ap = *bp = '\0';            \
-		r = version_subcmp(a, b);    \
-		*ap = ac, *bp = bc;          \
-		a = ap + 1, b = bp + 1;      \
-	} else if (ap) {                     \
-		ac = *ap, *ap = '\0';        \
-		r = version_subcmp(a, nil);  \
-		*ap = ac, a = ap + 1;        \
-	} else if (bp) {                     \
-		bc = *bp, *bp = '\0';        \
-		r = version_subcmp(nil, b);  \
-		*bp = bc, b = bp + 1;        \
-	}                                    \
+#define COMPARE  \
+	if (ap && bp) {  \
+		TEMP_NUL(ap, TEMP_NUL(bp, r = version_subcmp(a, b)));  \
+	} else if (ap) {  \
+		TEMP_NUL(ap, r = version_subcmp(a, nil));  \
+	} else if (bp) {  \
+		TEMP_NUL(bp, r = version_subcmp(nil, b));  \
+	}  \
+	a = ap ? (ap + 1) : a;  \
+	b = bp ? (bp + 1) : b;  \
 	if (r)  return r
+#define END_AT(C)  ap = strchr(a, (C)), bp = strchr(b, (C))
 
 	char *ap;
 	char *bp;
-	char ac, bc;
 	int r = 0;
 	static char nil[1] = { '\0' };
 
 	/* Compare epoch. */
-	ap = strchr(a, ':');
-	bp = strchr(b, ':');
+	END_AT(':');
 	COMPARE;
 
 	/* Compare non-epoch */
-	for (;;) {
-		ap = strchr(a, '.');
-		bp = strchr(b, '.');
-		if (!ap && !bp)
-			break;
+	while (END_AT('.'), (ap || bp)) {
 		COMPARE;
 	}
-	ap = strchr(a, '\0');
-	bp = strchr(b, '\0');
+	END_AT('\0');
 	COMPARE;
 	return 0;
-
-#undef COMPARE
 }
 
 
@@ -371,10 +342,10 @@ static char *locate_in_dir(struct library *lib, char *path, int oldest)
 	DIR *d = NULL;
 	struct dirent *f;
 	char *p;
-	char *old = NULL;
+	void *new;
 	char *best = NULL;
 	char *best_ver;
-	int r, saved_errno;
+	int r;
 
 	d = opendir(path);
 	t (d == NULL);
@@ -389,20 +360,15 @@ static char *locate_in_dir(struct library *lib, char *path, int oldest)
 		*p++ = '=';
 		if (!test_library_version(p, lib))
 			continue;
-		if (best == NULL) {
-			old = best, best = strdup(f->d_name);
-		} else {
-			best_ver = strrchr(best, '=');
-			assert(best_ver && !strchr(best_ver, '/'));
+		if (best != NULL) {
+			GET_VERSION(best_ver, best);
 			r = version_cmp(p, best_ver + 1);
-			if (oldest ? (r < 0) : (r > 0))
-				old = best, best = strdup(f->d_name);
+			if (!(oldest ? (r < 0) : (r > 0)))
+				continue;
 		}
-		if (best == NULL) {
-			best = old;
-			goto fail;
-		}
-		free(old);
+		new = strdup(f->d_name);
+		t (new == NULL);
+		free(best), best = new;
 	}
 	t (errno);
 
@@ -419,12 +385,11 @@ static char *locate_in_dir(struct library *lib, char *path, int oldest)
 	return p;
 
 fail:
-	saved_errno = errno;
+	RETURN (NULL) {
 	free(best);
 	if (d != NULL)
 		closedir(d);
-	errno = saved_errno;
-	return NULL;
+	}
 }
 
 
@@ -448,7 +413,7 @@ static char *locate(struct library *lib, char *path, int oldest)
 	char *old;
 	char *best_ver;
 	char *found_ver;
-	int r, saved_errno;
+	int r;
 
 	for (p = path; end; *e = (end ? ':' : '\0'), p = end + 1) {
 		end = strchr(p, ':');
@@ -465,10 +430,8 @@ static char *locate(struct library *lib, char *path, int oldest)
 		if (best == NULL) {
 			old = best, best = found;
 		} else {
-			best_ver = strrchr(best, '=');
-			found_ver = strrchr(found, '=');
-			assert(best_ver && !strchr(best_ver, '/'));
-			assert(found_ver && !strchr(found_ver, '/'));
+			GET_VERSION(best_ver, best);
+			GET_VERSION(found_ver, found);
 			r = version_cmp(found_ver + 1, best_ver + 1);
 			if (oldest ? (r < 0) : (r > 0))
 				old = best, best = found;
@@ -479,10 +442,8 @@ static char *locate(struct library *lib, char *path, int oldest)
 	return errno = 0, best;
 
 fail:
-	saved_errno = errno;
+	RETURN (NULL)
 	free(best);
-	errno = saved_errno;
-	return NULL;
 }
 
 
@@ -507,7 +468,6 @@ static int find_librarian_files(struct library *libraries, size_t n, char *path,
 	char *best_ver;
 	char *found_ver;
 	const char *last = NULL;
-	void *new;
 	size_t ffc = found_files_count;
 	int r;
 	struct found_file f;
@@ -515,9 +475,7 @@ static int find_librarian_files(struct library *libraries, size_t n, char *path,
 
 	qsort(libraries, n, sizeof(*libraries), library_name_cmp);
 	qsort(found_files, ffc, sizeof(*found_files), found_file_name_cmp);
-	new = realloc(found_files, (ffc + n) * sizeof(*found_files));
-	t (new == NULL);
-	found_files = new;
+	REALLOC(found_files, ffc + n);
 
 	for (i = 0; i < n; i++) {
 		f.name = libraries[i].name;
@@ -532,31 +490,23 @@ static int find_librarian_files(struct library *libraries, size_t n, char *path,
 		if (found == NULL)
 			goto not_this_range;
 		if (last && !strcmp(f.name, last)) {
-			best_ver = strrchr(best, '=');
-			found_ver = strrchr(found, '=');
-                        assert(best_ver && !strchr(best_ver, '/'));
-                        assert(found_ver && !strchr(found_ver, '/'));
-                        r = version_cmp(found + 1, best_ver + 1);
-			r = oldest ? (r < 0) : (r > 0);
-                        if (r)
-				free(best);
+			GET_VERSION(best_ver, best);
+			GET_VERSION(found_ver, found);
+			r = version_cmp(found + 1, best_ver + 1);
+			if (!(oldest ? (r < 0) : (r > 0)))
+				continue;
+			free(best);
 		} else {
-			r = 1, found_files_count++;
+			last = f.name, found_files_count++;
 		}
-		if (r) {
-			found_ver = strrchr(found, '=');
-                        assert(found_ver && !strchr(found_ver, '/'));
-			found_files[found_files_count - 1].name = f.name;
-			found_files[found_files_count - 1].version = found_ver + 1;
-			found_files[found_files_count - 1].path = best = found;
-		}
-		last = f.name;
+		GET_VERSION(found_ver, found);
+		found_files[found_files_count - 1].name = f.name;
+		found_files[found_files_count - 1].version = found_ver + 1;
+		found_files[found_files_count - 1].path = best = found;
 		continue;
 
 	not_this_range:
-		if (i + 1 == n)
-			goto not_found;
-		if (strcmp(f.name, libraries[i + 1].name))
+		if ((i + 1 == n) || strcmp(f.name, libraries[i + 1].name))
 			goto not_found;
 		continue;
 	}
@@ -592,10 +542,9 @@ fail:
  */
 static char *find_variable(const char *path, const char *var)
 {
-	int fd = -1, saved_errno;
+	int fd = -1;
 	size_t ptr = 0, size = 0, len;
 	char *buffer = NULL;
-	void *new;
 	char *p;
 	char *q;
 	char *sought = NULL;
@@ -605,12 +554,7 @@ static char *find_variable(const char *path, const char *var)
 	t (fd == -1);
 
 	for (;;) {
-		if (ptr == size) {
-			size = size ? (size << 1) : 512;
-			new = realloc(buffer, size);
-			t (new == NULL);
-			buffer = new;
-		}
+		MAYBE_GROW(buffer, ptr, size, 512);
 		n = read(fd, buffer + ptr, size - ptr);
 		t (n < 0);
 		if (n == 0)
@@ -619,9 +563,7 @@ static char *find_variable(const char *path, const char *var)
 	}
 
 	close(fd), fd = -1;
-	new = realloc(buffer, ptr + 3);
-	t (new == NULL);
-	buffer = new;
+	REALLOC(buffer, ptr + 3);
 	buffer[ptr++] = '\n';
 	buffer[ptr++] = '\0';
 	memmove(buffer + 1, buffer, ptr);
@@ -656,13 +598,12 @@ static char *find_variable(const char *path, const char *var)
 	return p;
 
 fail:
-	saved_errno = errno;
+	RETURN (NULL) {
 	if (fd >= 0)
 		close(fd);
 	free(buffer);
 	free(sought);
-	errno = saved_errno;
-	return NULL;
+	}
 }
 
 
@@ -684,10 +625,8 @@ static char *get_variables(const char **vars, const char **vars_end, size_t file
 	size_t ptr = 0;
 	size_t size = 0;
 	size_t len = 0;
-	void *new;
 	char *rc;
 	char *p;
-	int saved_errno;
 
 	while (files_start < found_files_count) {
 		path = found_files[files_start++].path;
@@ -696,12 +635,7 @@ static char *get_variables(const char **vars, const char **vars_end, size_t file
 			t (!part && errno);
 			if (!part || !*part)
 				continue;
-			if (ptr == size) {
-				size = size ? (size << 1) : 8;
-				new = realloc(parts, size * sizeof(*parts));
-				t (new == NULL);
-				parts = new;
-			}
+			MAYBE_GROW(parts, ptr, size, 8);
 			len += strlen(part) + 1;
 			parts[ptr++] = part;
 		}
@@ -722,12 +656,11 @@ static char *get_variables(const char **vars, const char **vars_end, size_t file
 
 	return rc;
 fail:
-	saved_errno = errno;
+	RETURN (NULL) {
 	while (ptr--)
 		free(parts[ptr]);
 	free(parts);
-	errno = saved_errno;
-	return NULL;
+	}
 }
 
 
@@ -746,7 +679,8 @@ int main(int argc, char *argv[])
 	const char **variables = (const char **)argv;
 	const char **variables_last = variables;
 	struct library *libraries = NULL;
-	struct library *libraries_last;
+	size_t libraries_ptr = 0;
+	size_t libraries_size = 0;
 	const char *path_;
 	char *path = NULL;
 	int rc;
@@ -759,46 +693,38 @@ int main(int argc, char *argv[])
 	size_t free_this_ptr = 0;
 	size_t free_this_size = 0;
 	const char *deps_string = "deps";
-	void *new;
 
 	/* Parse arguments. */
 	argv0 = argv ? (argc--, *argv++) : "pp";
-	while (argc) {
+	while (argc--) {
 		if (!dashed && !strcmp(*argv, "--")) {
 			dashed = 1;
 			argv++;
-			argc--;
 		} else if (!dashed && (**argv == '-')) {
 			arg = *argv++;
-			argc--;
 			if (!*arg)
 				goto usage;
 			for (arg++; *arg; arg++) {
-				if (*arg == 'd')
-					f_deps = 1;
-				else if (*arg == 'l')
-					f_locate = 1;
-				else if (*arg == 'o')
-					f_oldest = 1;
-				else
-					goto usage;
+				if      (*arg == 'd')  f_deps = 1;
+				else if (*arg == 'l')  f_locate = 1;
+				else if (*arg == 'o')  f_oldest = 1;
+				else                   goto usage;
 			}
 		} else {
 			*args_last++ = *argv++;
-			argc--;
 		}
 	}
 	if (f_deps && f_locate)
 		goto usage;
 
 	/* Parse VARIABLE and LIBRARY arguments. */
-	libraries = malloc((size_t)(args_last - args) * sizeof(*libraries));
-	libraries_last = libraries;
+	libraries_size = (size_t)(args_last - args);
+	libraries = malloc(libraries_size * sizeof(*libraries));
 	t (libraries == NULL);
 	for (; args != args_last; args++) {
 		if (is_variable(*args))
 			*variables_last++ = *args;
-		else if (parse_library(*args, libraries_last++))
+		else if (parse_library(*args, libraries + libraries_ptr++))
 			goto usage;
 	}
 
@@ -812,7 +738,7 @@ int main(int argc, char *argv[])
 	/* Find librarian files. */
 	for (start_libs = 0;;) {
 		start_files = found_files_count;
-		n = (size_t)(libraries_last - libraries) - start_libs;
+		n = libraries_ptr - start_libs;
 		if (n == 0)
 			break;
 		if (find_librarian_files(libraries + start_libs, n, path, f_oldest)) {
@@ -820,28 +746,21 @@ int main(int argc, char *argv[])
 			goto not_found;
 		}
 		start_libs += n;
-		if (f_locate)
+		if (f_locate || !f_deps)
 			break;
-		if (f_deps) {
-			data = get_variables(&deps_string, 1 + &deps_string, start_files);
-			t (data == NULL);
-			for (end = s = data; end; s = end + 1) {
-				while (isspace(*s))
-					s++;
-				end = strpbrk(s, " \t\r\n\f\v");
-				if (end)
-					*end = '\0';
-				if (*s && parse_library(s, libraries_last++))
-					goto not_found;
-			}
-			if (free_this_ptr == free_this_size) {
-				free_this_size = free_this_size ? (free_this_size << 1) : 4;
-				new = realloc(free_this, free_this_size * sizeof(void*));
-				t (new == NULL);
-				free_this = new;
-			}
-			free_this[free_this_ptr++] = data;
+		data = get_variables(&deps_string, 1 + &deps_string, start_files);
+		t (data == NULL);
+		for (end = s = data; end; s = end + 1) {
+			while (isspace(*s))
+				s++;
+			if ((end = strpbrk(s, " \t\r\n\f\v")))
+				*end = '\0';
+			MAYBE_GROW(libraries, libraries_ptr, libraries_size, 1);
+			if (*s && parse_library(s, libraries + libraries_ptr++))
+				goto not_found;
 		}
+		MAYBE_GROW(free_this, free_this_ptr, free_this_size, 4);
+		free_this[free_this_ptr++] = data, data = NULL;
 	}
 	if (f_locate) {
 		while (found_files_count)
@@ -868,6 +787,7 @@ usage:
 	fprintf(stderr, "%s: Invalid arguments, see `man 1 librarian'.\n", argv0);
 	rc = 3;
 	goto cleanup;
+
 cleanup:
 	while (found_files_count--)
 		free(found_files[found_files_count].path);

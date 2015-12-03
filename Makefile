@@ -43,7 +43,7 @@ bin/librarian: obj/librarian.o
 	@mkdir -p bin
 	${CC} ${FLAGS} -o $@ $^ ${LDFLAGS}
 
-obj/%.o: src/%.c
+obj/%.o: src/%.c src/*.h
 	mkdir -p obj
 	${CC} ${FLAGS} -c -o $@ ${CPPFLAGS} ${CFLAGS} $<
 
