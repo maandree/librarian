@@ -41,13 +41,6 @@
 
 
 /**
- * The name of the process.
- */
-static const char *argv0;
-
-
-
-/**
  * A library and version range.
  */
 struct library {
@@ -80,6 +73,13 @@ struct library {
 	 */
 	int upper_closed;
 };
+
+
+
+/**
+ * The name of the process.
+ */
+static const char *argv0;
 
 
 
