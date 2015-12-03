@@ -255,12 +255,12 @@ static int version_subcmp(char *a, char *b)
 		while (*b == '0')  b++;
 		ac = *ap, bc = *bp;
 		*ap = '\0', *bp = '\0';
-		if (ap - a < bp - b)  return -1;
-		if (ap - a > bp - b)  return +1;
+		if (ap - a < bp - b)  return *ap = ac, *bp = bc, -1;
+		if (ap - a > bp - b)  return *ap = ac, *bp = bc, +1;
 		r = strcmp(a, b);
 		*ap = ac, *bp = bc;
-		a = *a ? (ap + 1) : a;
-		b = *b ? (bp + 1) : b;
+		a = isdigit(*a) ? (ap + 1) : a;
+		b = isdigit(*b) ? (bp + 1) : b;
 		if (r)  return r;
 
 		/* Compare letter (non-digit) part. */
@@ -270,8 +270,8 @@ static int version_subcmp(char *a, char *b)
 		*ap = '\0', *bp = '\0';
 		r = strcmp(a, b);
 		*ap = ac, *bp = bc;
-		a = *a ? (ap + 1) : a;
-		b = *b ? (bp + 1) : b;
+		a = *a && !isdigit(*a) ? (ap + 1) : a;
+		b = *b && !isdigit(*b) ? (bp + 1) : b;
 		if (r)  return r;
 	}
 
@@ -323,10 +323,14 @@ static int version_cmp(char *a, char *b)
 	for (;;) {
 		ap = strchr(a, '.');
 		bp = strchr(b, '.');
-		if (!ap && !ap)
-			return 0;
+		if (!ap && !bp)
+			break;
 		COMPARE;
 	}
+	ap = strchr(a, '\0');
+	bp = strchr(b, '\0');
+	COMPARE;
+	return 0;
 
 #undef COMPARE
 }
@@ -345,7 +349,7 @@ static int test_library_version(char *version, struct library *required)
 	int upper = required->upper ? version_cmp(version, required->upper) : -1;
 	int lower = required->lower ? version_cmp(version, required->lower) : +1;
 
-	upper = required->lower_closed ? (upper <= 0) : (upper < 0);
+	upper = required->upper_closed ? (upper <= 0) : (upper < 0);
 	lower = required->lower_closed ? (lower >= 0) : (lower > 0);
 
 	return upper && lower;
@@ -411,6 +415,7 @@ static char *locate_in_dir(struct library *lib, char *path, int oldest)
 	t (p == NULL);
 	stpcpy(stpcpy(stpcpy(p, path), "/"), best);
 
+	free(best);
 	return p;
 
 fail:
@@ -562,7 +567,7 @@ not_found:
 	if (libraries[i].upper == libraries[i].lower) {
 		fprintf(stderr, "%s: cannot find library: %s%s%s", argv0,
 			libraries[i].name, libraries[i].upper ? "=" : "",
-			libraries[i].upper);
+			libraries[i].upper ? libraries[i].upper : "");
 	} else {
 		fprintf(stderr, "%s: cannot find library: %s%s%s%s%s%s%s", argv0,
 			libraries[i].name,
@@ -603,18 +608,19 @@ static char *find_variable(const char *path, const char *var)
 		if (ptr == size) {
 			size = size ? (size << 1) : 512;
 			new = realloc(buffer, size);
-			t (new != NULL);
+			t (new == NULL);
 			buffer = new;
 		}
 		n = read(fd, buffer + ptr, size - ptr);
 		t (n < 0);
 		if (n == 0)
 			break;
+		ptr += (size_t)n;
 	}
 
 	close(fd), fd = -1;
 	new = realloc(buffer, ptr + 3);
-	t (new != NULL);
+	t (new == NULL);
 	buffer = new;
 	buffer[ptr++] = '\n';
 	buffer[ptr++] = '\0';
@@ -624,7 +630,7 @@ static char *find_variable(const char *path, const char *var)
 	sought = malloc(strlen(var) + 2);
 	t (sought == NULL);
 	sought[0] = '\n';
-	strcpy(sought, var);
+	strcpy(sought + 1, var);
 
 	len = strlen(sought);
 	for (p = buffer; p;) {
@@ -638,11 +644,15 @@ static char *find_variable(const char *path, const char *var)
 		p += len + 1;
 		q = strchr(p, '\n');
 		*q = '\0';
+		break;
 	}
 
-	if (p == NULL)
-		free(buffer);
+	if (p != NULL) {
+		p = strdup(p);
+		t (p == NULL);
+	}
 	free(sought);
+	free(buffer);
 	return p;
 
 fail:
@@ -707,6 +717,7 @@ static char *get_variables(const char **vars, const char **vars_end, size_t file
 		*p++ = ' ';
 		free(parts[ptr]);
 	}
+	free(parts);
 	p[-1] = 0;
 
 	return rc;
@@ -714,6 +725,7 @@ fail:
 	saved_errno = errno;
 	while (ptr--)
 		free(parts[ptr]);
+	free(parts);
 	errno = saved_errno;
 	return NULL;
 }
@@ -781,7 +793,7 @@ int main(int argc, char *argv[])
 	t (libraries == NULL);
 	for (; args != args_last; args++) {
 		if (is_variable(*args))
-			*variables_last = *args;
+			*variables_last++ = *args;
 		else if (parse_library(*args, libraries_last++))
 			goto usage;
 	}
@@ -794,13 +806,16 @@ int main(int argc, char *argv[])
 	t (path == NULL);
 
 	/* Find librarian files. */
-	start_files = found_files_count;
-	start_libs = 0;
-	while ((n = (size_t)(libraries_last - libraries) - start_libs)) {
+	for (start_libs = 0;;) {
+		start_files = found_files_count;
+		n = (size_t)(libraries_last - libraries) - start_libs;
+		if (n == 0)
+			break;
 		if (find_librarian_files(libraries + start_libs, n, path, f_oldest)) {
 			t (errno);
 			goto not_found;
 		}
+		start_libs += n;
 		if (f_locate)
 			break;
 		if (f_deps) {
@@ -812,7 +827,7 @@ int main(int argc, char *argv[])
 				end = strpbrk(s, " \t\r\n\f\v");
 				if (end)
 					*end = '\0';
-				if (parse_library(s, libraries_last++))
+				if (*s && parse_library(s, libraries_last++))
 					goto not_found;
 			}
 			free(data), data = NULL;
