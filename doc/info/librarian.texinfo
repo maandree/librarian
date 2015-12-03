@@ -192,7 +192,7 @@ Usage error.
 
 @command{librarian} files should be stored in
 @file{PREFIX/share/librarian/}. Its filename should
-be the name of the library, followed by an 
+be the name of the library, followed by an =
 (equals-sign) and the version number. For example
 @file{/usr/share/librarian/libmy=1.0}
 
