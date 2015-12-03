@@ -1,0 +1,218 @@
+\input texinfo   @c -*-texinfo-*-
+
+@c %**start of header
+@setfilename librarian.info
+@settitle librarian
+@afourpaper
+@documentencoding UTF-8
+@documentlanguage en
+@finalout
+@c %**end of header
+
+
+@dircategory Development
+@direntry
+* librarian: (librarian).           Library to compiler flags resolver
+@end direntry
+
+
+@copying
+Copyright @copyright{} 2015 Mattias Andrée
+
+@quotation
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, with no Front-Cover Texts, and with no Back-Cover
+Texts. A copy of the license is included in the section entitled
+``GNU Free Documentation License''.
+@end quotation
+@end copying
+
+@ifnottex
+@node Top
+@top librarian -- Library to compiler flags resolver
+@insertcopying
+@end ifnottex
+
+@titlepage
+@title librarian
+@subtitle Library to compiler flags resolver
+@author by Mattias Andrée (maandree)
+
+@page
+@vskip 0pt plus 1filll
+@insertcopying
+@page
+@end titlepage
+
+@contents
+
+
+
+@menu
+* Overview::                        Brief overview of @command{librarian}.
+* Invoking::                        Invocation of @command{librarian}.
+* Files::                           @command{librarian} files.
+* GNU Free Documentation License::  Copying and sharing this manual.
+@end menu
+
+
+
+@node Overview
+@chapter Overview
+
+@command{librarian} is used to print flags required
+when compiling or linking, and want to use library
+that requires non-trival flags@footnote{Just @option{-l}
+and the library name sans `lib'}.
+
+
+
+@node Invoking
+@chapter Invoking
+
+Synopsis:
+@example
+librarian [OPTION]... [--] [VARIABLE]... [LIBRARY]...
+@end example
+
+@command{librarian} shall output the flags, required
+by the selected libraries, that are listed under the
+selected variables.
+
+@code{LIBRARY} can either be the name of the required
+library, the name of the required library and a version
+of said library, or the name of the required library
+and an accepted version range of said library. If the
+same library name is used more than once, the versions
+and version ranges are unioned. Recognised formats are:
+@table @code
+@item NAME
+Any version of the library @code{NAME} will do.
+@item NAME=VERSION
+Only version @code{VERSION} of the library @code{NAME}
+is acceptable. (Multiple version can be used by
+specifying more than once.)
+@item NAME<=MAX
+Any versions up to and including @code{MAX} of the
+library @code{NAME} will do.
+@item NAME<MAX
+Any versions up to but excluding @code{MAX} of the
+library @code{NAME} will do.
+@item NAME>=MIN
+At least version @code{MIN} of the library @code{NAME}
+is required.
+@item NAME>MIN
+A greater version than version @code{MIN} of the
+library @code{NAME} is required.
+@item NAME>=MIN<=MAX
+Combines, by intersection, @code{NAME>=MIN} and
+@code{NAME<=MAX}.
+@item NAME>=MIN<MAX
+Combines, by intersection, @code{NAME>=MIN} and
+@code{NAME<MAX}.
+@item NAME>MIN<=MAX
+Combines, by intersection, @code{NAME>MIN} and
+@code{NAME<=MAX}.
+@item NAME>MIN<MAX
+Combines, by intersection, @code{NAME>MIN} and
+@code{NAME<MAX}.
+@end table
+
+The are not predefined values for @code{VARIABLE},
+but the standardised ones are:
+@table @code
+@item CFLAGS
+Flags required by the compiler to compile the if
+the library @code{LIBRARY} is used. The library
+is a C library.
+@item CPPFLAGS
+Flags required by the C preprocessor to compile
+the if the library @code{LIBRARY} is used.
+@item LDFLAGS
+Flags required by the linker to link the program
+when the library @code{LIBRARY} is used.
+@item CXXFLAGS
+Flags required by the compiler to compile the if
+the library @code{LIBRARY} is used. The library
+is a C++ library.
+@item deps
+Libraries the library @code{LIBRARY} is dependent
+on. Flags from these libraries should not appear
+in the other variables unless the library
+@code{LIBRARY} requires them directly.
+@end table
+
+If @code{VARIABLE} is omitted, the process will
+exit with the value @code{0} if all listed libraries,
+@code{LIBRARY}, are available, and otherwise exit
+with the value @code{2}.
+
+@command{librarian} recognises the following
+options:
+@table @option
+@item -d
+Add output for dependencies too. Should be used
+for @code{LDFLAGS} when linking statically.
+@item -l
+Print the location of the files specified by
+@code{LIBRARY}. Cannot be combined with @option{-d}.
+@item -o
+Prefer older libraries, when multiple versions
+are available. This is useful if you are afraid
+of new software.
+@end table
+
+@command{librarian} is affected by the following
+environment variables:
+@table @env
+@item LIBRARIAN_PATH
+Colon-separated list of directories to search
+for @command{librarian} files.
+@end table
+
+@command{librarian} will exit with one of the
+following exit statuses:
+@table @code
+@item 0
+The program was successful.
+@item 1
+An error occurred.
+@item 2
+A library was not found.
+@item 3
+Usage error.
+@end table
+
+
+
+@node Files
+@chapter Files
+
+@command{librarian} files should be stored in
+@file{PREFIX/share/librarian/}. Its filename should
+be the name of the library, followed by an 
+(equals-sign) and the version number. For example
+@file{/usr/share/librarian/libmy=1.0}
+
+Empty lines and lines starting with a @code{#} (she)
+in a @command{librarian} files are ignored. Other
+lines should begin with a variable name and be
+followed by the required flags relevant to that
+variable. For the variable deps, @command{libraries}
+that the library requires should be listed in the
+same format the @code{LIBRARY} argument uses,
+in @ref{Invoking}.
+
+All variables should be in upper case unless they are
+reserved. In the latter case, the are lower cased.
+
+
+
+@node GNU Free Documentation License
+@appendix GNU Free Documentation License
+@include fdl.texinfo
+
+@bye
+
