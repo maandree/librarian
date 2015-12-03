@@ -482,16 +482,17 @@ fail:
 /**
  * Find librarian files for all libraries.
  * 
+ * Found files are appended to `found_files`.
+ * 
  * @param   libraries  The sought libraries.
  * @param   n          The number of elements in `libraries`.
  * @param   path       LIBRARIAN_PATH.
  * @param   oldest     Are older versions prefered?
- * @return             `NULL`-terminated list of librarian files.
- *                     `NULL` if all where not found, or on error,
- *                     on failure to find librarian files, `errno`
- *                     is set to 0.
+ * @return             0:             Successful and found all files.
+ *                     -1 and !errno: Did not find all files, but otherwise successful.
+ *                     -1 and errno:  An error occurred
  */
-static char **find_librarian_files(struct library *libraries, size_t n, char *path, int oldest)
+static int find_librarian_files(struct library *libraries, size_t n, char *path, int oldest)
 {
 	size_t i;
 	char *best = NULL;
@@ -499,24 +500,21 @@ static char **find_librarian_files(struct library *libraries, size_t n, char *pa
 	char *best_ver;
 	char *found_ver;
 	const char *last = NULL;
-	char **rc = NULL;
 	void *new;
-	size_t ptr = 0;
-	int r, saved_errno;
+	size_t ffc = found_files_count;
+	int r;
 	struct found_file f;
 	struct found_file *have;
 
 	qsort(libraries, n, sizeof(*libraries), library_name_cmp);
-	qsort(found_files, found_files_count, sizeof(*found_files), found_file_name_cmp);
-	rc = malloc((n + 1) * sizeof(*rc));
-	t (rc == NULL);
-	new = realloc(found_files, (found_files_count + n) * sizeof(*found_files));
+	qsort(found_files, ffc, sizeof(*found_files), found_file_name_cmp);
+	new = realloc(found_files, (ffc + n) * sizeof(*found_files));
 	t (new == NULL);
 	found_files = new;
 
 	for (i = 0; i < n; i++) {
 		f.name = libraries[i].name;
-		have = bsearch(&f, found_files, found_files_count, sizeof(*found_files), found_file_name_cmp);
+		have = bsearch(&f, found_files, ffc, sizeof(*found_files), found_file_name_cmp);
 		if (have) {
 			if (test_library_version(have->version, libraries + i))
 				continue;
@@ -536,15 +534,14 @@ static char **find_librarian_files(struct library *libraries, size_t n, char *pa
                         if (r)
 				free(best);
 		} else {
-			r = 1, ptr++;
+			r = 1, found_files_count++;
 		}
 		if (r) {
-			rc[ptr - 1] = best = found;
 			found_ver = strrchr(found, '=');
                         assert(found_ver && !strchr(found_ver, '/'));
-			found_files[found_files_count + ptr - 1].name = f.name;
-			found_files[found_files_count + ptr - 1].version = found_ver + 1;
-			found_files[found_files_count + ptr - 1].path = found;
+			found_files[found_files_count - 1].name = f.name;
+			found_files[found_files_count - 1].version = found_ver + 1;
+			found_files[found_files_count - 1].path = best = found;
 		}
 		last = f.name;
 		continue;
@@ -557,31 +554,24 @@ static char **find_librarian_files(struct library *libraries, size_t n, char *pa
 		continue;
 	}
 
-	found_files_count += ptr;
-	rc[ptr++] = NULL;
-	return rc;
+	return 0;
 
 not_found:
-	if (libraries[0].upper == libraries[0].lower) {
+	if (libraries[i].upper == libraries[i].lower) {
 		fprintf(stderr, "%s: cannot find library: %s%s%s", argv0,
-			libraries[0].name, libraries[0].upper ? "=" : "",
-			libraries[0].upper);
+			libraries[i].name, libraries[i].upper ? "=" : "",
+			libraries[i].upper);
 	} else {
 		fprintf(stderr, "%s: cannot find library: %s%s%s%s%s%s%s", argv0,
-			libraries[0].name,
-			libraries[0].lower ? ">" : "", libraries[0].lower_closed ? "=" : "",
-			libraries[0].lower ? libraries[0].lower : "",
-			libraries[0].upper ? "<" : "", libraries[0].upper_closed ? "=" : "",
-			libraries[0].upper ? libraries[0].upper : "");
+			libraries[i].name,
+			libraries[i].lower ? ">" : "", libraries[i].lower_closed ? "=" : "",
+			libraries[i].lower ? libraries[i].lower : "",
+			libraries[i].upper ? "<" : "", libraries[i].upper_closed ? "=" : "",
+			libraries[i].upper ? libraries[i].upper : "");
 	}
 	errno = 0;
 fail:
-	saved_errno = errno;
-	while (ptr--)
-		free(rc[ptr--]);
-	free(rc);
-	errno = saved_errno;
-	return NULL;
+	return -1;
 }
 
 
@@ -603,8 +593,6 @@ int main(int argc, char *argv[])
 	struct library *libraries_last;
 	const char *path_;
 	char *path = NULL;
-	char **files = NULL;
-	char **file;
 	int rc;
 
 	/* Parse arguments. */
@@ -656,14 +644,13 @@ int main(int argc, char *argv[])
 	t (path == NULL);
 
 	/* Find librarian files. */
-	files = find_librarian_files(libraries, (size_t)(libraries_last - libraries), path, f_oldest);
-	if (files == NULL) {
+	if (find_librarian_files(libraries, (size_t)(libraries_last - libraries), path, f_oldest)) {
 		t (errno);
 		goto not_found;
 	}
 	if (f_locate) {
-		for (file = files; *file; file++)
-			t (printf("%s\n", *file) < 0);
+		while (found_files_count)
+			t (printf("%s\n", found_files[--found_files_count].path) < 0);
 		goto done;
 	}
 
@@ -684,10 +671,8 @@ usage:
 	rc = 3;
 	goto cleanup;
 cleanup:
-	if ((file = files))
-		for (; *file; file++)
-			free(*file);
-	free(files);
+	while (found_files_count--)
+		free(found_files[found_files_count].path);
 	free(found_files);
 	free(libraries);
 	free(path);
