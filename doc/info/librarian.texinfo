@@ -148,7 +148,9 @@ Upper cased arguments are interpreted as
 @code{VARIABLE} options, other arguments are
 interpreted as @code{LIBRARY} options, and
 should be, but are not required to be, lower
-cased.
+cased. Additionally, @code{VARIABLE} may only
+consist of letters, digits, @code{_} (underscore),
+@code{-} (hyphen).
 
 If @code{VARIABLE} is omitted, the process will
 exit with the value @code{0} if all listed libraries,
