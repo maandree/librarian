@@ -104,9 +104,6 @@ static int is_variable(const char *s)
  */
 static int parse_library(char *s, struct library *lib)
 {
-#define CLEANUP  \
-	free(libraries)
-
 	char *p;
 	char c;
 
@@ -158,6 +155,9 @@ static int parse_library(char *s, struct library *lib)
  */
 int main(int argc, char *argv[])
 {
+#define CLEANUP  \
+	free(libraries)
+
 	int dashed = 0, f_deps = 0, f_locate = 0, f_oldest = 0;
 	char *arg;
 	char **args = argv;
