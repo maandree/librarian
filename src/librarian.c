@@ -760,8 +760,8 @@ int main(int argc, char *argv[])
 		free_this[free_this_ptr++] = data, data = NULL;
 	}
 	if (f_locate) {
-		while (found_files_count)
-			t (printf("%s\n", found_files[--found_files_count].path) < 0);
+		for (n = 0; n < found_files_count; n++)
+			t (printf("%s\n", found_files[n].path) < 0);
 		goto done;
 	}
 
