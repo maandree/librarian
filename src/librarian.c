@@ -49,13 +49,13 @@ struct library {
 	 * The lowest acceptable version.
 	 * `NULL` if unbounded.
 	 */
-	const char *lower;
+	char *lower;
 
   	/**
 	 * The highest acceptable version.
 	 * `NULL` if unbounded.
 	 */
-	const char *upper;
+	char *upper;
 
   	/**
 	 * Is the version stored in
@@ -148,6 +148,110 @@ static int parse_library(char *s, struct library *lib)
 
 
 /**
+ * Compare two version numbers that do not
+ * compare any does, and does not have an
+ * epoch.
+ * 
+ * @param   a  One of the version numbers.
+ * @param   b  The other version number.
+ * @return     <0: `a` < `b`.
+ *             =0: `a` = `b`.
+ *             >1: `a` > `b`.
+ */
+static int version_subcmp(char *a, char *b)
+{
+	char *ap;
+	char *bp;
+	char ac, bc;
+	int r;
+
+	while (*a || *b) {
+		/* Compare digit part. */
+		/* (We must support arbitrary lenght.) */
+		ap = a + strspn(a, "0123456789");
+		bp = b + strspn(b, "0123456789");
+		while (*a == '0')  a++;
+		while (*b == '0')  b++;
+		ac = *ap, bc = *bp;
+		*ap = '\0', *bp = '\0';
+		if (ap - a < bp - b)  return -1;
+		if (ap - a > bp - b)  return +1;
+		r = strcmp(a, b);
+		*ap = ac, *bp = bc;
+		a = *a ? (ap + 1) : a;
+		b = *b ? (bp + 1) : b;
+		if (r)  return r;
+
+		/* Compare letter (non-digit) part. */
+		ap = a + strcspn(a, "0123456789");
+		bp = b + strcspn(b, "0123456789");
+		ac = *ap, bc = *bp;
+		*ap = '\0', *bp = '\0';
+		r = strcmp(a, b);
+		*ap = ac, *bp = bc;
+		a = *a ? (ap + 1) : a;
+		b = *b ? (bp + 1) : b;
+		if (r)  return r;
+	}
+
+	return 0;
+}
+
+
+/**
+ * Compare two version numbers.
+ * 
+ * @param   a  One of the version numbers.
+ * @param   b  The other version number.
+ * @return     <0: `a` < `b`.
+ *             =0: `a` = `b`.
+ *             >0: `a` > `b`.
+ */
+static int version_cmp(char *a, char *b)
+{
+#define COMPARE                              \
+	if (ap && bp) {                      \
+		ac = *ap, bc = *bp;          \
+		*ap = *bp = '\0';            \
+		r = version_subcmp(a, b);    \
+		*ap = ac, *bp = bc;          \
+		a = ap + 1, b = bp + 1;      \
+	} else if (ap) {                     \
+		ac = *ap, *ap = '\0';        \
+		r = version_subcmp(a, nil);  \
+		*ap = ac, a = ap + 1;        \
+	} else if (bp) {                     \
+		bc = *bp, *bp = '\0';        \
+		r = version_subcmp(nil, b);  \
+		*bp = bc, b = bp + 1;        \
+	}                                    \
+	if (r)  return r
+
+	char *ap;
+	char *bp;
+	char ac, bc;
+	int r = 0;
+	static char nil[1] = { '\0' };
+
+	/* Compare epoch. */
+	ap = strchr(a, ':');
+	bp = strchr(b, ':');
+	COMPARE;
+
+	/* Compare non-epoch */
+	for (;;) {
+		ap = strchr(a, '.');
+		bp = strchr(b, '.');
+		if (!ap && !ap)
+			return 0;
+		COMPARE;
+	}
+
+#undef COMPARE
+}
+
+
+/**
  * @return  0: Program was successful.
  *          1: An error occurred.
  *          2: A library was not found.
@@ -218,5 +322,7 @@ usage:
 	fprintf(stderr, "%s: Invalid arguments, see `man 1 librarian'.\n", argv0);
 	CLEANUP;
 	return 3;
+
+#undef CLEANUP
 }
 
